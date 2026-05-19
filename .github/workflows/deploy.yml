@@ -1,3 +1,49 @@
+# name: Deploy Frontend
+
+# on:
+#   push:
+#     branches: [main]
+#   workflow_dispatch:
+
+# jobs:
+#   deploy:
+#     name: Deploy Frontend to VPS
+#     runs-on: ubuntu-latest
+#     environment: ec2
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Set up SSH
+#         run: |
+#           mkdir -p ~/.ssh
+#           echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_rsa
+#           chmod 600 ~/.ssh/id_rsa
+#           ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+#       # Copiamos todo el código del Front a una carpeta separada para que no choque con el backend
+#       - name: Sync code to VPS
+#         run: |
+#           rsync -rltz --delete \
+#             --omit-dir-times \
+#             --exclude='.git' \
+#             --exclude='node_modules' \
+#             ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/frontefolio_front/
+
+#       # Levantamos el contenedor del Frontend
+#       - name: Build and restart Frontend container
+#         uses: appleboy/ssh-action@v1
+#         with:
+#           host: ${{ secrets.VPS_HOST }}
+#           username: ${{ secrets.VPS_USER }}
+#           key: ${{ secrets.VPS_SSH_KEY }}
+#           command_timeout: 10m
+#           script: |
+#             cd /opt/frontefolio_front
+#             sg docker -c "docker compose build --no-cache"
+#             sg docker -c "docker compose up -d --remove-orphans"
+#             sg docker -c "docker image prune -f"
+
 name: Deploy Frontend
 
 on:
@@ -30,7 +76,31 @@ jobs:
             --exclude='node_modules' \
             ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/frontefolio_front/
 
-      # Levantamos el contenedor del Frontend
+      # ── AQUÍ ESTÁ LA DIFERENCIA: Creamos el .env antes del build ──
+      - name: Write .env on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/frontefolio_front
+            rm -f .env
+            echo "VITE_API_URL=${{ secrets.VITE_API_URL }}" > .env
+            echo "✓ Archivo .env creado con éxito"
+
+      # Verificación rápida en la consola de GitHub Actions
+      - name: Verify .env configuration
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            echo "--- Contenido del .env del Front ---"
+            cat /opt/frontefolio_front/.env
+
+      # Levantamos el contenedor del Frontend (Ahora sí leerá el .env)
       - name: Build and restart Frontend container
         uses: appleboy/ssh-action@v1
         with:
